@@ -1,0 +1,329 @@
+---
+title: "教師なし学習実践論（寺口担当分）"
+author: "Shunsuke Teraguchi"
+output:
+  html_document:
+fig_width: 6 
+fig_height: 6 
+---
+
+注）この資料は、滋賀大学データサイエンス研究科の教師なし学習の教材です。第三者に公開することのないようお願いします。
+
+# Rについて
+
+ここでは、base Rとも呼ばれる伝統的なRの利用を前提にしています。 tidyverse+ggplot2を用いたモダンなRが好みの人は自分で調べて進めてみて下さい。
+
+df という変数に、全て数値データであるデータフレームが格納されているという前提です。 データをダウンロードして読み込んだだけでは、不必要な行や列が含まれていると思います。不要な部分は最初に除去してください。 データに欠損値がある場合、事前に適当な値で補完しておいてください。
+
+関数の引数はよく使うものだけ記載しています。詳細はヘルプを参照してください。
+
+```{r}
+# データの読み込み。ここでは、ダウンロードしたファイルから必要な行と列を抽出したファイルを読み込んでいる。
+df <- read.csv("SSDSE-C-2023_formatted.csv",row.names = 1)
+```
+
+# ヒートマップ
+
+`heatmap(x, Rowv, Colv, symm = FALSE, scale = c("row", "column", "none"), …)`
+
+**注意点**
+
+-   データxは数値行列（`as.matrix(df)`等の変換が必要）
+
+-   デフォルトで行と列に対して、階層的クラスタリングが行われる
+
+    -   クラスタリングが不要なら、Rowv, ColvにNAを指定
+
+    -   自分で行った階層的クラスタリングを使いたい場合は、Rowv, Colvにhclust関数で作ったdendrogramを指定すればよい（今回は割愛）
+
+-   デフォルトで行に対して正規化が行われる
+
+    -   正規化しないなら、scale="none"
+
+    -   列に対して正規化するなら、scale="column"
+
+-   相関行列のように対称な行列のヒートマップを作るときはsymm=T
+
+    -   symm=Tとすると、自動的にscale="none"になる。
+
+-   実は、Rのデフォルトのheatmap関数には、スケールバーが表示されないという大きな欠点がある。
+
+    -   自分のための可視化であれば、スケールバーがなくても困らないことも多いが、論文発表などではスケールバーが必須。
+
+    -   スケールバーを表示したheatmapはパッケージを使って描くことができる。
+
+        -   例）gplotsパッケージのheatmap.2関数
+
+        -   例）pheatmapパッケージのpheatmap関数
+
+        -   例）ggplot2を使ったモダンなやり方
+
+```{r}
+## 生データをプロット
+heatmap(as.matrix(df),main="default") 
+# デフォルトで、行と列のそれぞれがクラスタリングされる。
+# また、行ごとに正規化される
+
+heatmap(as.matrix(df),scale="row",main='scale="row"')
+heatmap(as.matrix(df),scale="column",main='scale="column"')
+heatmap(as.matrix(df),scale="none",main='scale="none"')
+heatmap(as.matrix(df),scale="column",Rowv=NA,main="行のクラスタリングなし")
+heatmap(as.matrix(df),scale="column",Rowv=NA,Colv=NA,main="行、列のクラスタリングなし")
+```
+
+## 相関行列
+
+`cor(x)`
+
+**注意点**
+
+-   データフレームを直接与えればOK
+
+-   デフォルトでは、列に対して相関係数が計算される。行に対する相関を計算したければ、転置 t() を行う。`cor(t(x))`
+
+```{r}
+## 列に対する相関行列
+corr <- cor(df)
+print(round(corr,2))
+
+## 列に対する相関行列をプロット
+heatmap(corr,scale="none",main='scale="none"')
+heatmap(corr,symm=T,main="symm=T") # 相関行列プロット時はsymm=Tとした方がみやすく便利
+```
+
+```{r}
+## 行に対する相関行列
+corr <- cor(t(df))
+print(round(corr,2))
+
+## 行に対する相関行列をプロット
+heatmap(corr,symm=T)
+heatmap(corr,symm=T,Rowv=NA,main="クラスタリングなし")
+```
+
+# 次元縮約
+
+## 主成分分析
+
+`prcomp(x,scale)`
+
+**注意点**
+
+-   デフォルトではデータの正規化は行われない。（実際には明確な理由がなければ正規化を行った方がよいことが多い。） 正規化を行う際はscale.=T
+
+```{r}
+res <- prcomp(df,scale.=T)
+```
+
+**返り値は"prcomp"オブジェクト**
+
+-   格納されたデータ
+    -   res\$x :主成分得点（PC1,PC2,...）
+    -   res\$rotation :回転行列（重み行列W）
+    -   res\$sdev :各主成分の標準偏差
+
+```{r}
+# グラフを正方形に表示するおまじない
+par(pty="s")
+
+# 正規化を行わず主成分分析
+res <- prcomp(df)
+
+# 第１、第２主成分プロット
+plot(res$x[,c(1,2)]) 
+
+# 正規化を行なって主成分分析
+res <- prcomp(df,scale.=T)
+
+# 第１、第２主成分プロット
+plot(res$x[,c(1,2)]) 
+
+# 第１、第３主成分をプロット
+plot(res$x[,c(1,3)])
+
+# 第１、第２主成分を行名でプロット
+# 最初にtype="n"でプロットを行うと、点は表示されず、軸のみ描画される。
+# その後、text関数で主成分得点の位置に都道府県名（行名）を表示している。
+plot(res$x[,c(1,2)],type="n")
+text(res$x[,c(1,2)],rownames(df))
+
+# 第１、第２主成分のバイプロット
+biplot(res,choices = c(1, 2),cex=0.5)
+```
+
+```{r}
+# 重みベクトルの可視化
+rot <- res$rotation[,1]
+o <- order(rot,decreasing = T)
+# lasオプションでラベルの向きを縦にしている。
+barplot(c(rot[o[1:10]],rot[o[(length(rot)-10):length(rot)]]),las=2,main="第１主成分の重みベクトル")
+
+rot <- res$rotation[,2]
+o <- order(rot,decreasing = T)
+barplot(c(rot[o[1:10]],rot[o[(length(rot)-10):length(rot)]]),las=2,main="第２主成分の重みベクトル")
+
+rot <- res$rotation[,3]
+o <- order(rot,decreasing = T)
+barplot(c(rot[o[1:10]],rot[o[(length(rot)-10):length(rot)]]),las=2,main="第３主成分の重みベクトル")
+```
+
+-   prcompの結果にsummary関数を使うと寄与率の情報（標準偏差、寄与率、累積寄与率）が得られる
+
+```{r}
+summary(res)
+```
+
+summary関数の返り値のimportanceスロットにこれらの情報が格納されており、これを用いて寄与率を可視化できる。
+
+```{r}
+pca_summary <- summary(res)
+barplot(pca_summary$importance[2,],las=2)
+barplot(pca_summary$importance[3,],las=2)
+```
+
+ちなみに、主成分得点 res\\\$xの分散共分散行列を計算すると、確かに対角的になっている。
+
+```{r}
+heatmap(cov(res$x),symm=T,Rowv=NA)
+```
+
+## t-SNE
+
+Rtsne(X, dims = 2, initial_dims = 50, perplexity = 30, theta = 0.5, pca = TRUE, pca_scale = FALSE, normalize = TRUE)
+
+-   t-SNE自体に関する引数
+
+    -   X： データ行列
+
+    -   dims： 可視化目的であれば、２次元で十分だが別用途の場合には他の次元にも変更できる
+
+    -   perplexity：t-SNEのハイパーパラメータ。これにより結果は大きく変わる。ヘルプによるとperplexityの3倍がデータの行数を超えることのないようにしろと書いてある。
+
+    -   theta：Rtsneでは近似的なt-SNEが利用されている。thetaを大きくするほど、スピードが上がるが、本来のt-SNEの結果とはずれていくらしい。
+
+    -   normalize：t-SNEをする前に規格化するかどうか
+
+-   主成分分析に関する引数
+
+    -   pca：これがTRUEなら事前に主成分分析(PCA)が行われる。デフォルトはTRUE。
+
+    -   initial_dims：主成分分析でどこまで次元を落とすか。デフォルトでは、50次元まで圧縮される。
+
+    -   pca_scale：主成分分析をする前に規格化するかどうか。デフォルトはFALSE
+
+```{r}
+#install.packages("Rtsne")
+library(Rtsne)
+
+par(pty="s")
+set.seed(1234)
+# ここでは、主成分分析を行わず、また、theta=0として厳密なt-SNEを行っている。
+tsne <- Rtsne(df,pca=F,normalize=T, perplexity=15,theta=0)
+plot(tsne$Y,xlab="t-SNE1",ylab="t-SNE2")
+
+# 地域ごとに色指定
+# palette = "Okabe-Ito"は、色覚多様性に配慮した色を生成してくれる（らしい）
+cols=palette.colors(palette = "Okabe-Ito")
+col_map=c(cols[1],rep(cols[2],6),rep(cols[3],7),rep(cols[4],9),rep(cols[5],7),rep(cols[6],5),rep(cols[7],4),rep(cols[8],8))
+plot(tsne$Y,xlab="t-SNE1",ylab="t-SNE2",type="n")
+text(tsne$Y,rownames(df),col=col_map)
+```
+
+```{r}
+par(pty="s")
+
+set.seed(1234)
+tsne <- Rtsne(df,pca=F,normalize=F, perplexity=15,theta=0)
+plot(tsne$Y,xlab="t-SNE1",ylab="t-SNE2",type="n",main="主成分分析なし、規格化なし")
+text(tsne$Y,rownames(df),col=col_map)
+
+set.seed(1234)
+tsne <- Rtsne(df,pca=F,normalize=T, perplexity=15,theta=0)
+plot(tsne$Y,xlab="t-SNE1",ylab="t-SNE2",type="n",main="主成分分析なし、規格化あり")
+text(tsne$Y,rownames(df),col=col_map)
+```
+
+### 前処理として主成分分析を行う場合（特にデータが大きい時、計算コストを下げるために利用される）
+
+どのタイミングで正規化すべきかはちょっと悩みます。個人的には、主成分分析の前に正規化し、t-SNE前には正規化しないのが概念的には自然だと思います。Rtsneをデフォルトのまま使うと、その逆で、主成分分析の前には正規化せず、t-SNE前には正規化する形になるようです。
+
+```{r}
+par(pty="s")
+
+set.seed(1234)
+tsne <- Rtsne(df,pca=T, pca_scale=F, normalize=F, perplexity=15,theta=0)
+plot(tsne$Y,xlab="t-SNE1",ylab="t-SNE2",type="n",main="主成分分析前正規化なし、t-SNE前正規化なし")
+text(tsne$Y,rownames(df),col=col_map)
+
+set.seed(1234)
+tsne <- Rtsne(df,pca=T, pca_scale=T, normalize=F, perplexity=15,theta=0)
+plot(tsne$Y,xlab="t-SNE1",ylab="t-SNE2",type="n",main="主成分分析前正規化あり、t-SNE前正規化なし")
+text(tsne$Y,rownames(df),col=col_map)
+
+set.seed(1234)
+tsne <- Rtsne(df,pca=T, pca_scale=F, normalize=T, perplexity=15,theta=0)
+plot(tsne$Y,xlab="t-SNE1",ylab="t-SNE2",type="n",main="主成分分析前正規化なし、t-SNE前正規化あり")
+text(tsne$Y,rownames(df),col=col_map)
+
+set.seed(1234)
+tsne <- Rtsne(df,pca=T, pca_scale=T, normalize=T, perplexity=15,theta=0)
+plot(tsne$Y,xlab="t-SNE1",ylab="t-SNE2",type="n",main="主成分分析前正規化あり、t-SNE前正規化あり")
+text(tsne$Y,rownames(df),col=col_map)
+
+set.seed(1234)
+tsne <- Rtsne(df,perplexity=15,theta=0)
+plot(tsne$Y,xlab="t-SNE1",ylab="t-SNE2",type="n",main="デフォルト")
+text(tsne$Y,rownames(df),col=col_map)
+```
+
+## UMAP
+
+`umap(d, n_neighbors=15, n_components=2)`
+
+-   d：データ行列（データフレームでもよい）
+
+-   n_neighbors：t-SNEのperplexityのようなパラメータ
+
+-   n_components：次元縮約後の低次元空間の次元
+
+**注意点**
+
+-   umap関数では、正規化は行われない。正規化は必要な場合が多いはずなので、その際にはscale関数等と組み合わせる。
+
+-   Rのumapでは、Rtsneと異なり、主成分分析は行われない。もし、主成分分析と組み合わせたければ、prcomp関数などを用いて、自分で処理する必要がある。
+
+```{r}
+# install.packages("umap")
+library(umap)
+
+par(pty="s")
+
+set.seed(1234)
+res_umap <- umap(df)
+plot(res_umap$layout,xlab="umap1",ylab="umap2")
+```
+
+```{r}
+# umap.defaultsにumapでデフォルトで利用されるパラメータが格納されている。変更したければ、umap関数を呼び出すときにこれらのパラメータ名をオプションとして設定する。
+print(umap.defaults)
+```
+
+```{r}
+par(pty="s")
+
+# データを正規化せずにUMAP
+set.seed(1234)
+res_umap <- umap(df,n_neighbors=10)
+plot(res_umap$layout,xlab="umap1",ylab="umap2",type="n")
+text(res_umap$layout,rownames(df),col=col_map)
+```
+
+```{r}
+par(pty="s")
+
+# scale関数で事前に正規化を行った例
+set.seed(1234)
+res_umap <- umap(scale(df))
+plot(res_umap$layout,xlab="umap1",ylab="umap2",type="n")
+text(res_umap$layout,rownames(df),col=col_map)
+```
